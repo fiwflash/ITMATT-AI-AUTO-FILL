@@ -63,3 +63,7 @@ API key จะถูกเก็บใน `chrome.storage.local` ของเบ
 
 - Extension ขอสิทธิ์เข้าถึงเฉพาะเว็บไซต์ DPOST และ CNIF ตามที่กำหนดใน `manifest.json`
 - ตรวจสอบข้อมูลที่ AI วิเคราะห์ก่อนกรอกและส่งข้อมูลทุกครั้ง
+
+## 📄 License
+
+This project is open source and available for personal use.
