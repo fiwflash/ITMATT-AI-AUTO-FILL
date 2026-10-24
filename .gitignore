@@ -1,0 +1,21 @@
+# Local configuration and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Packaged and backup artifacts
+*.rar
+*.zip
+*.7z
+rollback/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+*.swp
+
+# Chrome extension build artifacts
+*.crx

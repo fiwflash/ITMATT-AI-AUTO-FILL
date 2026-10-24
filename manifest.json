@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "ThaiPost AI Fill (Multi-Site)",
+  "version": "4.0",
+  "description": "Auto-fill DPOST and CNIF using Gemini AI",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "*://dpostinter.thailandpost.com/*",
+    "*://cnif.thailandpost.com/*"
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "action": {
+    "default_title": "คลิกเพื่อเปิดเครื่องมือด้านข้าง",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

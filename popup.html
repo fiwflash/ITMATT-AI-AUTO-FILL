@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* รีเซ็ตและตั้งค่าพื้นฐาน */
+        body { 
+            width: 100%; min-height: 100vh; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #f1f5f9; margin: 0; padding: 16px; box-sizing: border-box;
+        }
+        * { box-sizing: border-box; }
+        textarea::-webkit-scrollbar { display: none; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .header h1 { font-size: 20px; font-weight: bold; color: #dc2626; margin: 0; }
+        .status-dot { width: 12px; height: 12px; border-radius: 50%; background-color: #cbd5e1; }
+        .status-dot.online { background-color: #22c55e; }
+        .status-dot.offline { background-color: #ef4444; }
+
+        .card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 12px; transition: all 0.2s;}
+        label { display: block; font-size: 11px; font-weight: bold; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
+        
+        input, select, textarea { 
+            width: 100%; padding: 8px 12px; font-size: 13px; border: 1px solid #e2e8f0; 
+            border-radius: 8px; background-color: #f8fafc; outline: none; font-family: inherit; transition: all 0.2s; 
+        }
+        input:focus, select:focus, textarea:focus { background-color: white; border-color: #f87171; box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.2); }
+        textarea { height: 80px; resize: none; }
+        
+        .flex-row { display: flex; gap: 8px; }
+        .flex-row select { flex: 1; cursor: pointer; }
+        .btn-icon { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 8px; cursor: pointer; padding: 0 12px; }
+        
+        /* Drag and Drop Zone */
+        .drop-zone { border: 2px dashed transparent; border-radius: 10px; transition: all 0.2s; position: relative;}
+        .drop-zone.drag-over { border-color: #dc2626; background-color: #fee2e2; }
+        .drop-zone.drag-over textarea { background-color: transparent; }
+
+        .preview-container { margin-top: 8px; display: flex; gap: 8px; overflow-x: auto; display: none; }
+        .preview-container.active { display: flex; }
+        .preview-img { 
+            max-width: 100%; 
+            max-height: 150px; 
+            object-fit: contain; 
+            border-radius: 8px; 
+            border: 1px solid #cbd5e1; 
+            display: block;
+        }
+
+        .btn-main { 
+            width: 100%; background-color: #dc2626; color: white; font-weight: bold; 
+            padding: 14px; border: none; border-radius: 12px; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(220, 38, 38, 0.3); margin-top: 4px;
+        }
+        .btn-main:hover { background-color: #b91c1c; }
+        
+        .btn-secondary {
+            width: 100%; background-color: #e2e8f0; color: #475569; font-weight: bold; 
+            padding: 10px; border: none; border-radius: 12px; cursor: pointer; transition: all 0.2s; margin-top: 8px;
+        }
+        .btn-secondary:hover { background-color: #cbd5e1; }
+
+        .status-text { margin-top: 16px; text-align: center; font-size: 11px; font-weight: bold; font-style: italic; color: #94a3b8; }
+        .status-text.info { color: #3b82f6; }
+        .status-text.success { color: #16a34a; }
+        .status-text.error { color: #ef4444; }
+
+        /* Section Visibility Toggle */
+        #inputSection.hidden { display: none; }
+        #reviewSection { display: none; }
+        #reviewSection.active { display: block; }
+
+        /* Review Table Styles - แก้ไขการล้นของ Grid */
+        /* เปลี่ยนจาก 1fr 1fr เป็น minmax(0, 1fr) เพื่อบังคับไม่ให้คอลัมน์ขยายตัวเกิน 50% */
+        .review-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-bottom: 8px;}
+        .review-field label { font-size: 10px; color: #64748b; margin-bottom: 2px; }
+        .review-field input { padding: 6px 8px; font-size: 12px; }
+        .review-field.full { grid-column: span 2; }
+        
+        /* Segmented Control (Toggle Switch) Styles */
+        .toggle-container {
+            display: flex; position: relative; background-color: #bae6fd; border-radius: 99px; padding: 4px; margin-top: 8px; transition: 0.3s;
+        }
+        .toggle-slider {
+            position: absolute; top: 4px; left: 4px; width: calc(50% - 4px); height: calc(100% - 8px); 
+            background: white; border-radius: 99px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+            transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1); z-index: 1;
+        }
+        .toggle-option {
+            flex: 1; text-align: center; padding: 8px 4px; font-size: 11px; font-weight: bold; color: #0284c7; 
+            cursor: pointer; z-index: 2; transition: color 0.3s; position: relative; user-select: none;
+        }
+        .toggle-option.active { color: #0f172a; }
+        .toggle-container.cnif-mode { background-color: #c7d2fe; }
+        .toggle-container.cnif-mode .toggle-slider { transform: translateX(calc(100%)); }
+        .toggle-container.cnif-mode .toggle-option { color: #4f46e5; }
+        .toggle-container.cnif-mode .toggle-option.active { color: #0f172a; }
+
+        /* Intake Toggle Styles */
+        .intake-toggle { background-color: #e2e8f0; }
+        .intake-toggle .toggle-option { color: #64748b; }
+        .intake-toggle .toggle-option.active { color: #0f172a; }
+
+        /* Phone Formatter Buttons - แก้ไขการล้นของปุ่ม */
+        .tel-btn-group { display: flex; gap: 4px; margin-top: 2px; }
+        .tel-toggle-btn {
+            background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 10px; 
+            padding: 4px 2px; /* ลด Padding ด้านข้างลงเล็กน้อย */
+            cursor: pointer; color: #334155; font-weight: bold; transition: 0.2s;
+            flex: 1; text-align: center; 
+            /* ลบ white-space: nowrap; ออก เพื่อยอมให้ข้อความตัดขึ้นบรรทัดใหม่ได้ถ้าหน้าจอแคบ */
+            display: flex; align-items: center; justify-content: center; line-height: 1.1;
+        }
+        .tel-toggle-btn:hover { background: #e2e8f0; }
+        .tel-toggle-btn.active-blue { background: #e0f2fe; border-color: #7dd3fc; color: #0369a1; }
+        .tel-toggle-btn.active-green { background: #dcfce7; border-color: #86efac; color: #166534; }
+		/* Print Styles for 10x10 Label */
+		@media print {
+			body * { visibility: hidden; }
+			#printLabelContainer, #printLabelContainer * { visibility: visible; }
+			#printLabelContainer {
+				position: absolute;
+				left: 0;
+				top: 0;
+				width: 10cm;
+				height: 10cm;
+				margin: 0;
+				padding: 0.3cm;
+				box-sizing: border-box;
+			}
+		}
+
+		.print-label-content {
+			width: 100%;
+			height: 100%;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			font-size: 10px;
+			line-height: 1.3;
+			border: 1px dashed #ccc;
+			padding: 6px;
+			box-sizing: border-box;
+			display: flex;
+			flex-direction: column;
+			justify-content: space-between;
+			background: white;
+		}
+
+		.print-label-content .label-section {
+			margin-bottom: 3px;
+		}
+
+		.print-label-content .label-header {
+			font-weight: bold;
+			font-size: 8px;
+			color: #64748b;
+			text-transform: uppercase;
+			border-bottom: 1px solid #e2e8f0;
+			margin-bottom: 3px;
+			padding-bottom: 1px;
+		}
+
+		.print-label-content .label-name {
+			font-size: 13px;
+			font-weight: bold;
+			color: #0f172a;
+			margin-bottom: 2px;
+		}
+
+		.print-label-content .label-address {
+			font-size: 10px;
+			color: #334155;
+			margin-bottom: 1px;
+		}
+
+		.print-label-content .label-tel {
+			font-size: 9px;
+			color: #64748b;
+			font-weight: bold;
+		}
+
+		.print-label-content .label-country {
+			font-size: 11px;
+			font-weight: bold;
+			color: #dc2626;
+			margin-top: 3px;
+		}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>ThaiPost AI Fill</h1>
+        <div id="modelStatus" class="status-dot"></div>
+    </div>
+
+    <!-- MAIN INPUT SECTION -->
+    <div id="inputSection">
+        <div class="card" id="systemCard" style="background: #e0f2fe; border: 1px solid #7dd3fc; margin-bottom: 12px; transition: 0.3s;">
+            <label style="color: #0369a1; font-size: 12px; text-align: center;">🌐 เลือกระบบเป้าหมาย (Target System)</label>
+            <select id="systemSelect" style="display: none;">
+                <option value="DPOST">DPOST</option>
+                <option value="CNIF">CNIF</option>
+            </select>
+            <div class="toggle-container" id="toggleContainer">
+                <div class="toggle-slider" id="toggleSlider"></div>
+                <div class="toggle-option active" id="opt-dpost">🌍 DPOST (ส่งต่างประเทศ)</div>
+                <div class="toggle-option" id="opt-cnif">🏢 CNIF (Intranet)</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom: 12px; padding-bottom: 8px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <label style="margin: 0;">🔑 ตั้งค่าระบบ (Settings)</label>
+                <div class="flex-row" style="width: 150px;">
+                    <select id="modelSelect" style="padding: 4px 8px; font-size: 11px;"><option value="">Loading Models...</option></select>
+                    <button id="refreshModels" class="btn-icon" style="padding: 0 8px;">🔄</button>
+                </div>
+            </div>
+            <input type="password" id="apiKey" placeholder="Enter Gemini API Key..." style="margin-top: 8px;">
+        </div>
+
+        <div style="margin-bottom: 12px;">
+            <div class="toggle-container intake-toggle" id="intakeToggleContainer">
+                <div class="toggle-slider" id="intakeSlider"></div>
+                <div class="toggle-option active" id="opt-split">✂️ โหมดแยกช่อง (ค่าเริ่มต้น)</div>
+                <div class="toggle-option" id="opt-single">📸 โหมดรูปเดียว (สแกนรวม)</div>
+            </div>
+        </div>
+
+        <div id="singleModeZone" style="display: none;">
+            <div class="card drop-zone" id="singleZone" style="background: #fdf4ff; border-color: #f5d0fe;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="margin-bottom: 0; color: #c026d3;">📸 ถ่ายรูป/ลากวางรูป (รวมผู้ส่ง & ผู้รับ)</label>
+                    <button id="clearSingleBtn" style="background: none; border: none; cursor: pointer; font-size: 11px; color: #ef4444; padding: 2px 6px; border-radius: 4px; transition: 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='none'">🗑️ ล้าง</button>
+                </div>
+                <textarea id="singleInput" placeholder="ลากรูปมาวาง / แปะข้อความที่มีทั้งผู้ส่งและผู้รับที่นี่..." style="height: 120px;"></textarea>
+                <div id="singlePreview" class="preview-container"></div>
+            </div>
+        </div>
+
+        <div id="splitModeZones">
+            <div class="card drop-zone" id="senderZone">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="margin-bottom: 0;">📦 1. ผู้ส่ง (Sender - Thailand)</label>
+                    <button id="clearSenderBtn" style="background: none; border: none; cursor: pointer; font-size: 11px; color: #ef4444; padding: 2px 6px; border-radius: 4px; transition: 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='none'">🗑️ ล้าง</button>
+                </div>
+                <textarea id="senderInput" placeholder="ลากรูปมาวาง / แปะข้อความ..."></textarea>
+                <div id="senderPreview" class="preview-container"></div>
+            </div>
+            <div class="card drop-zone" id="receiverZone">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                    <label style="margin-bottom: 0;">🌍 2. ผู้รับ (Receiver - International)</label>
+                    <button id="clearReceiverBtn" style="background: none; border: none; cursor: pointer; font-size: 11px; color: #ef4444; padding: 2px 6px; border-radius: 4px; transition: 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='none'">🗑️ ล้าง</button>
+                </div>
+                <textarea id="receiverInput" placeholder="ลากรูปมาวาง / แปะข้อความ..."></textarea>
+                <div id="receiverPreview" class="preview-container"></div>
+            </div>
+        </div>
+
+        <button id="processBtn" class="btn-main">วิเคราะห์ข้อมูล (ตรวจก่อนกรอก)</button>
+        <button id="clearAllBtn" class="btn-secondary" style="background-color: transparent; border: 1px solid #cbd5e1; color: #ef4444;">🗑️ ล้างข้อมูลทั้งหมด</button>
+
+        <!-- โซนสำหรับโชว์ประวัติรายการสแกนย้อนหลัง 5 รายการล่าสุด -->
+        <div id="historySection" style="margin-top: 16px; padding: 12px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <label style="color: #475569; font-size: 11px; margin-bottom: 8px;">📜 ประวัติการสแกนล่าสุด (5 รายการล่าสุด)</label>
+            <div id="historyList">
+                <!-- ข้อมูลประวัติจะถูกเรนเดอร์ผ่าน JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- REVIEW VALIDATION SECTION -->
+    <div id="reviewSection">
+        <div style="background: #eff6ff; padding: 10px; border-radius: 8px; margin-bottom: 12px; border: 1px solid #bfdbfe;">
+            <span style="font-size: 12px; font-weight: bold; color: #1e40af;">ตรวจสอบและแก้ไขข้อมูลก่อนกรอก</span>
+            <div style="font-size: 10px; color: #dc2626; margin-top: 5px; line-height: 1.4;">
+                <b>⚠️ คำเตือน:</b> ตรวจสอบ "รหัสประเทศ" และ "รหัสไปรษณีย์" ก่อนกดยืนยันเสมอ!
+            </div>
+        </div>
+
+        <div id="origSingleContainer" class="card" style="display: none; background: #fdf4ff; border-color: #f5d0fe;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="margin: 0; color: #c026d3;">📸 ข้อมูลต้นฉบับ (สแกนรวม)</label>
+                <button id="toggleOrigSingle" style="background: none; border: none; font-size: 10px; color: #c026d3; cursor: pointer;">👁️ ซ่อนต้นฉบับ</button>
+            </div>
+            <div id="origSingleBox" style="font-size: 11px; color: #64748b; background: white; padding: 6px; border-radius: 4px; border: 1px dashed #f0abfc; display: block;"></div>
+        </div>
+
+        <!-- Sender Review -->
+        <div class="card">
+            <div id="origSenderContainer" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="margin: 0;">📦 ผู้ส่ง (Thailand)</label>
+                <button id="toggleOrigSender" style="background: none; border: none; font-size: 10px; color: #3b82f6; cursor: pointer;">👁️ ซ่อนต้นฉบับ</button>
+            </div>
+            <div id="origSenderBox" style="font-size: 11px; color: #64748b; background: #f8fafc; padding: 6px; border-radius: 4px; border: 1px dashed #cbd5e1; margin-bottom: 8px; display: block;"></div>
+            <div class="review-grid">
+                <div class="review-field full"><label>Name</label><input type="text" id="rev_sname"></div>
+                
+                <!-- สลับปุ่มเบอร์โทรสำหรับฝั่งผู้ส่ง (แนวทางที่ 2) -->
+                <div class="review-field">
+                    <label>Tel (เบอร์โทรผู้ส่ง)</label>
+                    <input type="text" id="rev_stel" style="margin-bottom: 4px;">
+                    <div class="tel-btn-group">
+                        <button type="button" id="btnSenderCC" class="tel-toggle-btn">🇹🇭 Local (0)</button>
+                        <button type="button" id="btnSenderSymbol" class="tel-toggle-btn">📄 มีขีด/เว้นวรรค</button>
+                    </div>
+                </div>
+
+                <div class="review-field full"><label>Email (optional)</label><input type="email" id="rev_semail" maxlength="50"></div>
+                <div class="review-field"><label>Postcode</label><input type="text" id="rev_spostalcode" style="border-color:#3b82f6; font-weight:bold; background:#eff6ff;"></div>
+                <div class="review-field full"><label>Address / Premise (รวบรวม ซอย ถนน)</label><input type="text" id="rev_spremise"></div>
+                <div class="review-field"><label>Sub-district</label><input type="text" id="rev_ssubdistrict"></div>
+                <div class="review-field"><label>District</label><input type="text" id="rev_sdistrict"></div>
+                <div class="review-field full"><label>Province</label><input type="text" id="rev_sprovince"></div>
+            </div>
+        </div>
+
+        <!-- Receiver Review -->
+        <div class="card">
+            <div id="origReceiverContainer" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <label style="margin: 0;">🌍 ผู้รับ (International)</label>
+                <button id="toggleOrigReceiver" style="background: none; border: none; font-size: 10px; color: #3b82f6; cursor: pointer;">👁️ ซ่อนต้นฉบับ</button>
+            </div>
+            <div id="origReceiverBox" style="font-size: 11px; color: #64748b; background: #f8fafc; padding: 6px; border-radius: 4px; border: 1px dashed #cbd5e1; margin-bottom: 8px; display: block;"></div>
+            <div class="review-grid">
+                <div class="review-field full"><label>Name</label><input type="text" id="rev_rname"></div>
+                
+                <!-- สลับปุ่มเบอร์โทรสำหรับฝั่งผู้รับ (แนวทางที่ 2) -->
+                <div class="review-field">
+                    <label>Tel (เบอร์โทรผู้รับ)</label>
+                    <input type="text" id="rev_rtel" style="margin-bottom: 4px;">
+                    <div class="tel-btn-group">
+                        <button type="button" id="btnReceiverCC" class="tel-toggle-btn">🌐 Local (0)</button>
+                        <button type="button" id="btnReceiverSymbol" class="tel-toggle-btn">📄 มีขีด/เว้นวรรค</button>
+                    </div>
+                </div>
+
+                <div class="review-field full"><label>Email (optional)</label><input type="email" id="rev_remail" maxlength="50"></div>
+                <div class="review-field"><label>Postcode</label><input type="text" id="rev_rpostcode" style="border-color:#dc2626; font-weight:bold; background:#fef2f2;"></div>
+                <div class="review-field full"><label>Address (รวบรวม ซอย ถนน)</label><input type="text" id="rev_premise"></div>
+                <div class="review-field"><label>City</label><input type="text" id="rev_city"></div>
+                <div class="review-field"><label>State/Province</label><input type="text" id="rev_state"></div>
+                <div class="review-field full"><label>Destination / Country Code (ITMATT/ePacket)</label><input type="text" id="rev_rcountry" style="border-color:#eab308; background:#fefce8; font-weight:bold; color:#a16207;"></div>
+                <div id="territoryWarning" class="review-field full" style="display: none; background: #e0f2fe; border: 1px solid #7dd3fc; padding: 8px; border-radius: 6px; margin-top: 4px;">
+                    <span style="font-size: 10px; color: #0369a1;"><b>ℹ️ ข้อมูลเพิ่มเติม:</b> AI ตรวจพบว่าเป็นพื้นที่พิเศษ ระบบจึงปรับรหัสประเทศเป็น <b><span id="warn_code"></span></b> อัตโนมัติ</span>
+                </div>
+            </div>
+        </div>
+
+		<div class="card" style="background: #f8fafc; border: 1px solid #cbd5e1;">
+			<div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;">
+				<button id="copyAddressBtn" style="background: white; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; color: #0284c7; font-weight: bold; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📋 คัดลอก</button>
+				<button id="printLabelLastUsedBtn" style="flex: 1; min-width: 170px; background: #16a34a; border: 1px solid #15803d; padding: 8px 10px; border-radius: 8px; font-size: 12px; cursor: pointer; color: white; font-weight: bold; transition: 0.2s; box-shadow: 0 2px 4px rgba(22,163,74,0.22);">🖨️ พิมพ์แบบที่ใช้ล่าสุด</button>
+			</div>
+			<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+				<div>
+					<label style="font-size: 10px; margin-bottom: 3px;">Paper</label>
+					<select id="printPaperPresetSelect" style="padding: 6px 8px; font-size: 11px;">
+						<option value="4x6">4x6 Shipping Label</option>
+						<option value="10x10">10x10 Label</option>
+						<option value="a6">A6 Shipping Label</option>
+						<option value="a5">A5 Large Label</option>
+						<option value="a4-2up">A4 2-up</option>
+						<option value="a4-box">A4 แนวนอน - จ่าหน้ากล่อง</option>
+					</select>
+				</div>
+				<div>
+					<label style="font-size: 10px; margin-bottom: 3px;">Layout</label>
+					<select id="printLayoutSelect" style="padding: 6px 8px; font-size: 11px;">
+						<option value="combined">รวมในแผ่นเดียว</option>
+						<option value="separate">แยก FROM/TO</option>
+						<option value="box-diagonal">จ่าหน้ากล่อง</option>
+					</select>
+				</div>
+			</div>
+			<div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+				<button id="printLabelOpenEditorBtn" style="background: white; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; color: #16a34a; font-weight: bold; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">เปิดตัวอย่าง / แก้ไขก่อนพิมพ์</button>
+			</div>
+			<textarea id="combinedAddress" readonly style="height: 180px; font-size: 12px; background: #e2e8f0; color: #334155; border: 1px solid #cbd5e1; padding: 10px; line-height: 1.4;"></textarea>
+		</div>
+		
+        <button id="confirmBtn" class="btn-main" style="background-color: #16a34a; box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.3);">✅ ยืนยันและฉีดข้อมูลลงเว็บ</button>
+        <button id="cancelBtn" class="btn-secondary">ย้อนกลับ / ยกเลิก</button>
+    </div>
+
+    <div id="status" class="status-text">พร้อมทำงาน ลากรูปมาวางได้เลย!</div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
