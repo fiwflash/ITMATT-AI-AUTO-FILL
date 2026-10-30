@@ -279,6 +279,8 @@ function applyPhoneFormatting() {
 // ==========================================
 // 3. ระบบ Caching & History ประวัติการสแกน (chrome.storage.local)
 // ==========================================
+let historyDisplayLimit = 5;
+
 async function saveToHistory(data) {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.get(['scanHistory'], (result) => {
@@ -287,7 +289,8 @@ async function saveToHistory(data) {
             const newItem = { id: Date.now(), displayLabel: label, data: data };
             
             history.unshift(newItem);
-            if (history.length > 5) history.pop();
+            // เก็บประวัติได้ต่อเนื่องตามความสามารถของ chrome.storage (ตั้งเพดานความปลอดภัยไว้ที่ 100 รายการ)
+            if (history.length > 100) history.pop();
             
             chrome.storage.local.set({ scanHistory: history }, () => {
                 renderHistoryUI(); 
@@ -309,7 +312,9 @@ function renderHistoryUI() {
             return;
         }
 
-        history.forEach(item => {
+        const visibleItems = history.slice(0, historyDisplayLimit);
+
+        visibleItems.forEach(item => {
             const btn = document.createElement('button');
             btn.style.cssText = "width: 100%; text-align: left; padding: 8px 12px; margin-bottom: 6px; background: white; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 12px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 1px rgba(0,0,0,0.02); transition: 0.15s;";
             btn.innerHTML = `<span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; color: #334155; font-weight: 500;">${item.displayLabel}</span> <span style="color: #2563eb; font-size: 11px; font-weight: bold;">👁️ โหลด</span>`;
@@ -326,6 +331,42 @@ function renderHistoryUI() {
             };
             container.appendChild(btn);
         });
+
+        // ควบคุมปุ่มแสดงเพิ่ม / ย่อรายการ เมื่อมีมากกว่า 5 รายการ
+        if (history.length > 5) {
+            const actionContainer = document.createElement('div');
+            actionContainer.style.cssText = "display: flex; gap: 6px; margin-top: 6px;";
+
+            if (historyDisplayLimit < history.length) {
+                const moreBtn = document.createElement('button');
+                const remaining = history.length - historyDisplayLimit;
+                const nextBatch = Math.min(5, remaining);
+                moreBtn.style.cssText = "flex: 1; padding: 6px 10px; background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 11px; color: #475569; font-weight: bold; cursor: pointer; transition: 0.15s; text-align: center;";
+                moreBtn.innerText = `⬇️ แสดงเพิ่ม (+${nextBatch} จากที่เหลือ ${remaining})`;
+                moreBtn.onmouseover = () => moreBtn.style.background = "#e2e8f0";
+                moreBtn.onmouseout = () => moreBtn.style.background = "#f1f5f9";
+                moreBtn.onclick = () => {
+                    historyDisplayLimit += 5;
+                    renderHistoryUI();
+                };
+                actionContainer.appendChild(moreBtn);
+            }
+
+            if (historyDisplayLimit > 5) {
+                const collapseBtn = document.createElement('button');
+                collapseBtn.style.cssText = "padding: 6px 10px; background: #f1f5f9; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 11px; color: #64748b; font-weight: bold; cursor: pointer; transition: 0.15s; text-align: center;";
+                collapseBtn.innerText = "⬆️ ย่อเหลือ 5";
+                collapseBtn.onmouseover = () => collapseBtn.style.background = "#e2e8f0";
+                collapseBtn.onmouseout = () => collapseBtn.style.background = "#f1f5f9";
+                collapseBtn.onclick = () => {
+                    historyDisplayLimit = 5;
+                    renderHistoryUI();
+                };
+                actionContainer.appendChild(collapseBtn);
+            }
+
+            container.appendChild(actionContainer);
+        }
     });
 }
 
