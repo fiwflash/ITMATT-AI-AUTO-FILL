@@ -544,16 +544,18 @@ document.getElementById('opt-single').addEventListener('click', () => {
 });
 
 // เฉพาะโมเดล Gemini ที่เรียกใช้งานได้บน Free Tier และอ่านภาพได้ (vision/multimodal)
-// เรียงตามความเสถียร+ความแม่นยำที่เหมาะกับงานสกัดข้อมูลจากรูป
-// (โมเดลตระกูล flash ติด 503 "high demand" เป็นระยะสลับกันไปมา จึงวางตัวเสถียรสุดไว้หน้า
-//  และเก็บ 2.5 ไว้เป็น fallback เพราะเทสแล้วใช้ได้จริงกับ key นี้)
+// เรียงตามความเสถียร+ความเร็ว (3.5-flash-lite เทสแล้วเสถียรสุด จึงเป็น default)
+// โมเดลตระกูล flash ติด 503 "high demand" เป็นระยะสลับกันไปมา
 const modelDefinitions = [
-    { key: 'gemini-3.6-flash', label: '🚀 Gemini 3.6 Flash (แนะนำ - เสถียรและแม่นยำ)' },
-    { key: 'gemini-3.5-flash-lite', label: '🍃 Gemini 3.5 Flash-Lite (ประหยัดสุด - เหมาะสกัดข้อมูลปริมาณมาก)' },
-    { key: 'gemini-2.5-flash', label: '🔵 Gemini 2.5 Flash (fallback)' },
+    { key: 'gemini-3.5-flash-lite', label: '🍃 Gemini 3.5 Flash-Lite (แนะนำ - เสถียรและเร็วสุด)' },
     { key: 'gemini-2.5-flash-lite', label: '🟢 Gemini 2.5 Flash-Lite (fallback - ประหยัด)' },
+    { key: 'gemini-2.5-flash', label: '🔵 Gemini 2.5 Flash (fallback)' },
+    { key: 'gemini-3.6-flash', label: '🚀 Gemini 3.6 Flash (แม่นยำ - ช้า/ติดโหลดเป็นระยะ)' },
     { key: 'gemini-3.8-flash', label: '⚡ Gemini 3.8 Flash (เร็วสุด - ช่วงนี้ติดโหลดสูง)' }
 ];
+
+// โมเดลที่ผู้ใช้เลือกไว้เอง (หรือ default) — เป็นจุดเริ่มต้นของทุกการวิเคราะห์
+let currentPreferredModel = null;
 
 function fetchAvailableModels(key, savedModel) {
     const select = document.getElementById('modelSelect');
@@ -571,14 +573,17 @@ function fetchAvailableModels(key, savedModel) {
         select.appendChild(opt);
     });
 
-    // ลำดับการเลือก: คงค่าเดิม > savedModel ที่ยังถูกต้อง > default (gemini-3.6-flash) > ตัวแรก
+    // ลำดับการเลือก: คงค่าเดิม > savedModel ที่ยังถูกต้อง > default (gemini-3.5-flash-lite) > ตัวแรก
     const options = Array.from(select.options);
     const target = options.find(o => o.value === currentValue)
         || options.find(o => o.value === savedModel)
-        || options.find(o => o.value.includes('gemini-3.6-flash'))
+        || options.find(o => o.value.includes('gemini-3.5-flash-lite'))
         || options[0];
 
-    if (target) target.selected = true;
+    if (target) {
+        target.selected = true;
+        currentPreferredModel = target.value; // จำจุดเริ่มต้นไว้ (ผู้ใช้เลือก / default)
+    }
 
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.set({ selectedModel: target ? target.value : '' });
@@ -597,6 +602,7 @@ document.getElementById('apiKey').addEventListener('input', (e) => {
 });
 
 document.getElementById('modelSelect').addEventListener('change', (e) => {
+    currentPreferredModel = e.target.value; // ผู้ใช้เปลี่ยนเอง → อัปเดตจุดเริ่มต้น
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
         chrome.storage.local.set({ selectedModel: e.target.value });
     }
@@ -741,7 +747,7 @@ function getModelShortName(value) {
     return String(value).split('/').pop();
 }
 
-// สลับไปโมเดลถัดไปในลิสต์เมื่อวิเคราะห์ล้มเหลว แล้วบันทึกลง storage
+// สลับไปโมเดลถัดไปในลิสต์เมื่อวิเคราะห์ล้มเหลว (ชั่วคราว — ไม่บันทึก storage)
 // คืน { oldModel, newModel } เมื่อสลับสำเร็จ, คืน null เมื่อสลับไม่ได้ (มีโมเดลเดียว)
 function switchToNextModel() {
     const select = document.getElementById('modelSelect');
@@ -757,10 +763,8 @@ function switchToNextModel() {
     const oldModel = getModelShortName(select.value);
     const newModel = getModelShortName(nextOption.value);
 
+    // ชั่วคราวเท่านั้น — ไม่บันทึก storage (finally จะ reset กลับจุดเริ่มต้น)
     select.value = nextOption.value;
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ selectedModel: nextOption.value });
-    }
 
     return { oldModel, newModel };
 }
@@ -907,6 +911,7 @@ document.getElementById('processBtn').addEventListener('click', async () => {
     let lastError = null;
     const triedNames = [];
 
+    try {
     for (let attempt = 0; attempt < totalModels; attempt++) {
         const model = modelSelect.value;
         const shortName = getModelShortName(model);
@@ -980,6 +985,10 @@ document.getElementById('processBtn').addEventListener('click', async () => {
         clearInterval(tickId);
         status.innerText = `วิเคราะห์เสร็จสิ้นด้วย ${getModelShortName(modelSelect.value)}! กรุณาตรวจสอบข้อมูลก่อนส่งเข้า ${targetSystem}`;
         status.className = "status-text info";
+    } finally {
+        // รีเซ็ต dropdown กลับเป็นโมเดลที่ผู้ใช้เลือกไว้ (อย่าทิ้งค้างที่ fallback)
+        if (currentPreferredModel) modelSelect.value = currentPreferredModel;
+    }
 });
 
 // ==========================================
