@@ -491,14 +491,16 @@ if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
     chrome.storage.local.get(['geminiApiKey', 'selectedModel', 'targetSystem'], (result) => {
         if (result.geminiApiKey) {
             document.getElementById('apiKey').value = result.geminiApiKey;
-            fetchAvailableModels(result.geminiApiKey, result.selectedModel);
         }
+        // โหลดรายการโมเดลเสมอ (เป็น static list ไม่ต้องใช้ key)
+        fetchAvailableModels(null, result.selectedModel);
         if (result.targetSystem) {
             document.getElementById('systemSelect').value = result.targetSystem;
         }
         updateSystemTheme();
     });
 } else {
+    fetchAvailableModels();
     updateSystemTheme();
 }
 
@@ -541,28 +543,47 @@ document.getElementById('opt-single').addEventListener('click', () => {
     clearSender(); clearReceiver(); 
 });
 
-async function fetchAvailableModels(key, savedModel) {
+// เฉพาะโมเดล Gemini ที่เรียกใช้งานได้บน Free Tier และอ่านภาพได้ (vision/multimodal)
+// เรียงตามความเสถียร+ความแม่นยำที่เหมาะกับงานสกัดข้อมูลจากรูป
+// (โมเดลตระกูล flash ติด 503 "high demand" เป็นระยะสลับกันไปมา จึงวางตัวเสถียรสุดไว้หน้า
+//  และเก็บ 2.5 ไว้เป็น fallback เพราะเทสแล้วใช้ได้จริงกับ key นี้)
+const modelDefinitions = [
+    { key: 'gemini-3.6-flash', label: '🚀 Gemini 3.6 Flash (แนะนำ - เสถียรและแม่นยำ)' },
+    { key: 'gemini-3.5-flash-lite', label: '🍃 Gemini 3.5 Flash-Lite (ประหยัดสุด - เหมาะสกัดข้อมูลปริมาณมาก)' },
+    { key: 'gemini-2.5-flash', label: '🔵 Gemini 2.5 Flash (fallback)' },
+    { key: 'gemini-2.5-flash-lite', label: '🟢 Gemini 2.5 Flash-Lite (fallback - ประหยัด)' },
+    { key: 'gemini-3.8-flash', label: '⚡ Gemini 3.8 Flash (เร็วสุด - ช่วงนี้ติดโหลดสูง)' }
+];
+
+function fetchAvailableModels(key, savedModel) {
     const select = document.getElementById('modelSelect');
     const statusDot = document.getElementById('modelStatus');
-    try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`);
-        if (!response.ok) throw new Error("API Key Invalid");
-        const data = await response.json();
-        const models = data.models.filter(m => m.supportedGenerationMethods.includes('generateContent'));
-        
-        select.innerHTML = '';
-        models.forEach(model => {
-            const opt = document.createElement('option');
-            opt.value = model.name;
-            opt.innerText = model.displayName || model.name.split('/')[1];
-            if (model.name === savedModel) opt.selected = true;
-            select.appendChild(opt);
-        });
-        statusDot.className = 'status-dot online';
-    } catch (err) {
-        select.innerHTML = '<option value="">Check API Key</option>';
-        statusDot.className = 'status-dot offline';
+    if (!select) return;
+
+    // เก็บค่า selection เดิมไว้ เพื่อไม่ให้รีเซ็ตตอนพิมพ์ API Key / กดรีเฟรช
+    const currentValue = select.value || '';
+
+    select.innerHTML = '';
+    modelDefinitions.forEach(def => {
+        const opt = document.createElement('option');
+        opt.value = 'models/' + def.key; // resource name ที่ใช้เรียก :generateContent ได้จริง
+        opt.innerText = def.label;
+        select.appendChild(opt);
+    });
+
+    // ลำดับการเลือก: คงค่าเดิม > savedModel ที่ยังถูกต้อง > default (gemini-3.6-flash) > ตัวแรก
+    const options = Array.from(select.options);
+    const target = options.find(o => o.value === currentValue)
+        || options.find(o => o.value === savedModel)
+        || options.find(o => o.value.includes('gemini-3.6-flash'))
+        || options[0];
+
+    if (target) target.selected = true;
+
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ selectedModel: target ? target.value : '' });
     }
+    statusDot.className = 'status-dot online';
 }
 
 document.getElementById('apiKey').addEventListener('input', (e) => {
@@ -713,18 +734,124 @@ document.getElementById('clearAllBtn').addEventListener('click', () => {
 });
 
 // ==========================================
+// 6.5. MODEL AUTO-SWITCH (สลับโมเดลอัตโนมัติเมื่อวิเคราะห์ล้มเหลว)
+// ==========================================
+function getModelShortName(value) {
+    if (!value) return '';
+    return String(value).split('/').pop();
+}
+
+// สลับไปโมเดลถัดไปในลิสต์เมื่อวิเคราะห์ล้มเหลว แล้วบันทึกลง storage
+// คืน { oldModel, newModel } เมื่อสลับสำเร็จ, คืน null เมื่อสลับไม่ได้ (มีโมเดลเดียว)
+function switchToNextModel() {
+    const select = document.getElementById('modelSelect');
+    if (!select || select.options.length === 0) return null;
+
+    const currentIndex = select.selectedIndex >= 0 ? select.selectedIndex : 0;
+    const nextIndex = (currentIndex + 1) % select.options.length;
+    const nextOption = select.options[nextIndex];
+
+    // มีตัวเลือกเดียว = สลับไม่ได้
+    if (nextIndex === currentIndex || !nextOption || nextOption.value === select.value) return null;
+
+    const oldModel = getModelShortName(select.value);
+    const newModel = getModelShortName(nextOption.value);
+
+    select.value = nextOption.value;
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ selectedModel: nextOption.value });
+    }
+
+    return { oldModel, newModel };
+}
+
+function describeGeminiError(err) {
+    if (!err) return 'เกิดข้อผิดพลาดในการวิเคราะห์ข้อมูล';
+    if (err.kind === 'invalid_key') {
+        return '🔑 API Key ไม่ถูกต้องหรือหมดอายุ กรุณาตรวจสอบ API Key แล้วลองใหม่อีกครั้ง';
+    }
+    if (err.kind === 'timeout') {
+        return '⏱️ หมดเวลารอการตอบกลับจาก Gemini (โมเดลอาจกำลังโหลดสูง)';
+    }
+    if (err.kind === 'parse_error') {
+        return '⚠️ AI ส่งข้อมูลกลับมาในรูปแบบที่ไม่ถูกต้อง';
+    }
+    const msg = (err && err.message) ? err.message : String(err);
+    return 'เกิดข้อผิดพลาดในการวิเคราะห์: ' + msg;
+}
+
+// ตรวจว่า error ที่ Gemini คืนมาเป็นการใช้ API Key ที่ไม่ถูกต้องหรือไม่
+function isInvalidKeyError(error) {
+    if (!error) return false;
+    const status = String(error.status || '');
+    const message = String(error.message || '');
+    return status === 'INVALID_ARGUMENT' ||
+        status === 'UNAUTHENTICATED' ||
+        status === 'PERMISSION_DENIED' ||
+        /api key|invalid key|api_key|not valid|expired/i.test(message);
+}
+
+// เรียก Gemini หนึ่งครั้ง คืน parsed data (object) เมื่อสำเร็จ
+// โยน error พร้อม .kind เมื่อล้มเหลว (invalid_key / timeout / api_error / parse_error)
+async function callGeminiAndParse(model, apiKey, parts) {
+    // กัน request ค้าง: ถ้า Gemini ไม่ตอบกลับภายในเวลาที่กำหนด ให้ abort
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
+    let resp;
+    try {
+        resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: parts }],
+                generationConfig: { responseMimeType: "application/json" } // บังคับคืนค่า JSON ป้องกัน Error
+            }),
+            signal: controller.signal
+        });
+    } catch (fetchErr) {
+        if (fetchErr && fetchErr.name === 'AbortError') {
+            const err = new Error('หมดเวลารอการตอบกลับจาก Gemini (โมเดลอาจกำลังโหลดสูง)');
+            err.kind = 'timeout';
+            throw err;
+        }
+        throw fetchErr;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+
+    const json = await resp.json();
+    if (json.error) {
+        const err = new Error(json.error.message);
+        err.kind = isInvalidKeyError(json.error) ? 'invalid_key' : 'api_error';
+        throw err;
+    }
+
+    const responseText = json.candidates[0].content.parts[0].text;
+
+    try {
+        const cleanText = responseText.replace(/```json/gi, '').replace(/```/gi, '').trim();
+        return JSON.parse(cleanText);
+    } catch (parseErr) {
+        const err = new Error("AI ส่งข้อมูลผิดพลาด กรุณากดวิเคราะห์ใหม่อีกครั้งครับ");
+        err.kind = 'parse_error';
+        throw err;
+    }
+}
+
+// ==========================================
 // 7. FEATURE: AI EXTRACTION (วิเคราะห์ข้อมูล)
 // ==========================================
+// ระยะเวลารอสูงสุดก่อน abort (มิลลิวินาที) — ปรับได้ตามต้องการ
+const AI_TIMEOUT_MS = 5000;
 document.getElementById('processBtn').addEventListener('click', async () => {
     const apiKey = document.getElementById('apiKey').value.trim();
-    const model = document.getElementById('modelSelect').value;
+    const modelSelect = document.getElementById('modelSelect');
     const status = document.getElementById('status');
     const senderText = document.getElementById('senderInput').value.trim();
     const receiverText = document.getElementById('receiverInput').value.trim();
     const singleText = document.getElementById('singleInput').value.trim();
     const targetSystem = document.getElementById('systemSelect').value;
 
-    if (!apiKey || !model) { status.innerText = "กรุณาเช็ค API Key"; status.className = "status-text error"; return; }
+    if (!apiKey || !modelSelect.value) { status.innerText = "กรุณาเช็ค API Key"; status.className = "status-text error"; return; }
 
     if (currentIntakeMode === 'SPLIT' && (!senderText && !senderImageData || !receiverText && !receiverImageData)) {
         status.innerText = "⚠️ กรุณาใส่ข้อมูลให้ครบทั้งผู้ส่งและผู้รับ";
@@ -734,11 +861,8 @@ document.getElementById('processBtn').addEventListener('click', async () => {
         status.className = "status-text error"; return; 
     }
 
-    status.innerText = "Gemini กำลังวิเคราะห์ข้อมูล...";
-    status.className = "status-text info";
-
-    try {
-        const promptText = `Task: Extract shipping info for International post from Thailand. Translate ALL info to English. 
+    // เตรียม prompt + parts ไว้ครั้งเดียว (ใช้ซ้ำกับทุกโมเดลที่ลอง)
+    const promptText = `Task: Extract shipping info for International post from Thailand. Translate ALL info to English. 
         CRITICAL RULES:
         1. Sender (Thailand): Identify Sub-district, District, Province, Postcode.
         2. Receiver (Intl): Identify City, State, Postcode.
@@ -751,38 +875,73 @@ document.getElementById('processBtn').addEventListener('click', async () => {
           "receiver": { "rname":"", "rtel":"", "remail":"", "premise":"", "city":"", "state":"", "rpostcode":"", "rcountry":"" }
         }`;
 
-        let parts = [{ text: promptText }];
-        
-        if (currentIntakeMode === 'SPLIT') {
-            parts.push({ text: `Sender Text: ${senderText}` });
-            if (senderImageData) parts.push({ inlineData: { mimeType: "image/jpeg", data: senderImageData } });
-            parts.push({ text: `Receiver Text: ${receiverText}` });
-            if (receiverImageData) parts.push({ inlineData: { mimeType: "image/jpeg", data: receiverImageData } });
-        } else {
-            parts.push({ text: `Analyze BOTH sender and receiver. Text: ${singleText}` });
-            if (singleImageData) parts.push({ inlineData: { mimeType: "image/jpeg", data: singleImageData } });
+    let parts = [{ text: promptText }];
+    
+    if (currentIntakeMode === 'SPLIT') {
+        parts.push({ text: `Sender Text: ${senderText}` });
+        if (senderImageData) parts.push({ inlineData: { mimeType: "image/jpeg", data: senderImageData } });
+        parts.push({ text: `Receiver Text: ${receiverText}` });
+        if (receiverImageData) parts.push({ inlineData: { mimeType: "image/jpeg", data: receiverImageData } });
+    } else {
+        parts.push({ text: `Analyze BOTH sender and receiver. Text: ${singleText}` });
+        if (singleImageData) parts.push({ inlineData: { mimeType: "image/jpeg", data: singleImageData } });
+    }
+
+    // รายชื่อโมเดลทั้งหมดที่ใช้ลองได้ (ตามลำดับใน dropdown)
+    const modelValues = Array.from(modelSelect.options).map(o => o.value).filter(Boolean);
+    if (modelValues.length === 0) { status.innerText = "กรุณาเช็ค API Key"; status.className = "status-text error"; return; }
+    const totalModels = modelValues.length;
+
+    // ตัวนับเวลารวม แสดงว่าระบบยังทำงานอยู่ (ไม่ใช่ค้าง)
+    const startedAt = Date.now();
+    let currentAttemptLabel = '';
+    const tickId = setInterval(() => {
+        if (status.className === "status-text info") {
+            const elapsed = Math.round((Date.now() - startedAt) / 1000);
+            status.innerText = `⏳ ${currentAttemptLabel} · ${elapsed} วินาที`;
         }
+    }, 1000);
 
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/${model}:generateContent?key=${apiKey}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                contents: [{ parts: parts }],
-                generationConfig: { responseMimeType: "application/json" } // บังคับคืนค่า JSON ป้องกัน Error
-            })
-        });
+    // ไล่ลองทีละโมเดลอัตโนมัติ จนสำเร็จ หรือครบทุกโมเดล (ไม่ต้องให้ user กดเอง)
+    let cleanData = null;
+    let lastError = null;
+    const triedNames = [];
 
-        const json = await resp.json();
-        if (json.error) throw new Error(json.error.message);
-        
-        const responseText = json.candidates[0].content.parts[0].text;
-        
-        let cleanData;
+    for (let attempt = 0; attempt < totalModels; attempt++) {
+        const model = modelSelect.value;
+        const shortName = getModelShortName(model);
+        triedNames.push(shortName);
+
+        currentAttemptLabel = `กำลังวิเคราะห์ด้วย ${shortName}... (${attempt + 1}/${totalModels})`;
+        status.className = "status-text info";
+        status.innerText = `⏳ ${currentAttemptLabel} · 0 วินาที`;
+
         try {
-            const cleanText = responseText.replace(/```json/gi, '').replace(/```/gi, '').trim();
-            cleanData = JSON.parse(cleanText);
-        } catch (parseErr) {
-            throw new Error("AI ส่งข้อมูลผิดพลาด กรุณากดวิเคราะห์ใหม่อีกครั้งครับ");
+            cleanData = await callGeminiAndParse(model, apiKey, parts);
+            lastError = null;
+            break; // สำเร็จ
+        } catch (err) {
+            lastError = err;
+            // key ผิด → สลับโมเดลก็ช่วยไม่ได้ ให้หยุดทันที
+            if (err && err.kind === 'invalid_key') break;
+            // สลับไปโมเดลถัดไป (ถ้ายังเหลือ) แล้วลองต่อรอบถัดไป
+            const switched = switchToNextModel();
+            if (!switched) break;
         }
+    }
+
+    clearInterval(tickId);
+
+    // ล้มเหลวครบทุกโมเดล → แจ้งผล
+    if (cleanData === null) {
+        status.className = "status-text error";
+        if (lastError && lastError.kind === 'invalid_key') {
+            status.innerText = describeGeminiError(lastError);
+        } else {
+            status.innerText = `${describeGeminiError(lastError)}\n❌ ลองครบทุกโมเดลแล้ว (${triedNames.join(' → ')}) ยังไม่สำเร็จ กรุณากด "วิเคราะห์ข้อมูล" ใหม่อีกครั้ง`;
+        }
+        return;
+    }
 
         if (currentIntakeMode === 'SPLIT') {
             document.getElementById('origSenderContainer').style.display = 'flex';
@@ -818,13 +977,9 @@ document.getElementById('processBtn').addEventListener('click', async () => {
         document.getElementById('inputSection').classList.add('hidden');
         document.getElementById('reviewSection').classList.add('active');
         
-        status.innerText = `วิเคราะห์เสร็จสิ้น! กรุณาตรวจสอบข้อมูลก่อนส่งเข้า ${targetSystem}`;
+        clearInterval(tickId);
+        status.innerText = `วิเคราะห์เสร็จสิ้นด้วย ${getModelShortName(modelSelect.value)}! กรุณาตรวจสอบข้อมูลก่อนส่งเข้า ${targetSystem}`;
         status.className = "status-text info";
-
-    } catch (err) {
-        status.innerText = "Error: " + err.message;
-        status.className = "status-text error";
-    }
 });
 
 // ==========================================
